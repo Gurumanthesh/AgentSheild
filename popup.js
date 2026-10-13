@@ -1,3 +1,47 @@
+const extensionAPI = globalThis.browser || globalThis.chrome;
+const storageAPI = extensionAPI?.storage?.local || extensionAPI?.storage || null;
+const tabsAPI = extensionAPI?.tabs || null;
+const runtimeAPI = extensionAPI?.runtime || null;
+const scriptingAPI = extensionAPI?.scripting || null;
+
+async function getStoredData(keys) {
+  if (!storageAPI || typeof storageAPI.get !== 'function') {
+    return {};
+  }
+
+  const result = storageAPI.get(keys);
+  if (result && typeof result.then === 'function') {
+    return result;
+  }
+
+  return new Promise((resolve, reject) => {
+    try {
+      storageAPI.get(keys, resolve);
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+async function setStoredData(data) {
+  if (!storageAPI || typeof storageAPI.set !== 'function') {
+    return;
+  }
+
+  const result = storageAPI.set(data);
+  if (result && typeof result.then === 'function') {
+    return result;
+  }
+
+  return new Promise((resolve, reject) => {
+    try {
+      storageAPI.set(data, resolve);
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
 const stateLabel = document.getElementById('state-label');
 const riskScore = document.getElementById('risk-score');
 const summaryText = document.getElementById('summary-text');
@@ -35,7 +79,8 @@ function renderResult(result) {
 }
 
 async function loadCurrentTabInfo() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const queryTabs = tabsAPI?.query ? tabsAPI.query.bind(tabsAPI) : null;
+  const [tab] = queryTabs ? await queryTabs({ active: true, currentWindow: true }) : [];
   const url = tab?.url || '';
   if (url) {
     try {
@@ -51,7 +96,7 @@ async function loadCurrentTabInfo() {
     pageUrl.textContent = 'Could not resolve the current tab.';
   }
 
-  const stored = await chrome.storage.local.get(['lastAnalysis', 'lastAnalyzedUrl']);
+  const stored = await getStoredData(['lastAnalysis', 'lastAnalyzedUrl']);
   if (stored.lastAnalysis && stored.lastAnalyzedUrl === url) {
     renderResult(stored.lastAnalysis);
   } else {
@@ -60,7 +105,8 @@ async function loadCurrentTabInfo() {
 }
 
 async function analyzeCurrentPage() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const queryTabs = tabsAPI?.query ? tabsAPI.query.bind(tabsAPI) : null;
+  const [tab] = queryTabs ? await queryTabs({ active: true, currentWindow: true }) : [];
   if (!tab || !tab.id) {
     renderResult({ status: 'analysis_unavailable', risk_score: 0, summary: 'The active tab could not be inspected.', indicators: [] });
     return;
@@ -73,28 +119,33 @@ async function analyzeCurrentPage() {
   statusBox.classList.add('status-neutral');
 
   try {
-    const [{ result }] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: () => {
-        const text = document.body ? document.body.innerText.slice(0, 12000) : '';
-        const links = Array.from(document.querySelectorAll('a[href]')).slice(0, 20).map((link) => ({
-          text: link.textContent ? link.textContent.trim() : '',
-          url: link.href,
-        }));
-        return {
-          url: window.location.href,
-          text,
-          links,
-        };
-      },
-    });
+    const executeScript = scriptingAPI?.executeScript ? scriptingAPI.executeScript.bind(scriptingAPI) : null;
+    const scriptResult = executeScript
+      ? await executeScript({
+          target: { tabId: tab.id },
+          func: () => {
+            const text = document.body ? document.body.innerText.slice(0, 12000) : '';
+            const links = Array.from(document.querySelectorAll('a[href]')).slice(0, 20).map((link) => ({
+              text: link.textContent ? link.textContent.trim() : '',
+              url: link.href,
+            }));
+            return {
+              url: window.location.href,
+              text,
+              links,
+            };
+          },
+        })
+      : [{ result: { url: tab.url || '', text: '', links: [] } }];
 
-    const response = await chrome.runtime.sendMessage({
-      type: 'REQUEST_ANALYSIS',
-      payload: result,
-    });
+    const response = runtimeAPI && typeof runtimeAPI.sendMessage === 'function'
+      ? await runtimeAPI.sendMessage({
+          type: 'REQUEST_ANALYSIS',
+          payload: scriptResult[0]?.result || { url: tab.url || '', text: '', links: [] },
+        })
+      : null;
 
-    renderResult(response);
+    renderResult(response || { status: 'analysis_unavailable', risk_score: 0, summary: 'The page could not be analyzed from this tab.', indicators: [] });
   } catch (error) {
     console.error('Page analysis failed', error);
     renderResult({ status: 'analysis_unavailable', risk_score: 0, summary: 'The page could not be analyzed from this tab.', indicators: [] });
@@ -103,10 +154,21 @@ async function analyzeCurrentPage() {
 
 document.getElementById('analyze-button').addEventListener('click', analyzeCurrentPage);
 document.getElementById('details-button').addEventListener('click', () => {
-  chrome.tabs.create({ url: chrome.runtime.getURL('analysis.html') });
+  const analysisUrl = runtimeAPI && typeof runtimeAPI.getURL === 'function' ? runtimeAPI.getURL('analysis.html') : 'analysis.html';
+  if (tabsAPI && typeof tabsAPI.create === 'function') {
+    tabsAPI.create({ url: analysisUrl });
+    return;
+  }
+  window.open(analysisUrl, '_blank');
 });
 document.getElementById('options-link').addEventListener('click', () => {
-  chrome.runtime.openOptionsPage();
+  if (runtimeAPI && typeof runtimeAPI.openOptionsPage === 'function') {
+    runtimeAPI.openOptionsPage();
+    return;
+  }
+  if (tabsAPI && typeof tabsAPI.create === 'function') {
+    tabsAPI.create({ url: (runtimeAPI && typeof runtimeAPI.getURL === 'function') ? runtimeAPI.getURL('options.html') : 'options.html' });
+  }
 });
 
 loadCurrentTabInfo();

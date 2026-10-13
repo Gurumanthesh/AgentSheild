@@ -1,9 +1,61 @@
+const extensionAPI = globalThis.browser || globalThis.chrome;
+const storageAPI = extensionAPI?.storage?.local || extensionAPI?.storage || null;
+const actionAPI = extensionAPI?.action || extensionAPI?.browserAction || null;
+const runtimeAPI = extensionAPI?.runtime || null;
+
 const API_BASE_URL = 'http://127.0.0.1:8000';
 const DEFAULT_WORDS = ['password', 'secret', 'token', 'api_key'];
 
+async function getStoredData(keys) {
+  if (!storageAPI || typeof storageAPI.get !== 'function') {
+    return {};
+  }
+
+  const result = storageAPI.get(keys);
+  if (result && typeof result.then === 'function') {
+    return result;
+  }
+
+  return new Promise((resolve, reject) => {
+    try {
+      storageAPI.get(keys, resolve);
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+async function setStoredData(data) {
+  if (!storageAPI || typeof storageAPI.set !== 'function') {
+    return;
+  }
+
+  const result = storageAPI.set(data);
+  if (result && typeof result.then === 'function') {
+    return result;
+  }
+
+  return new Promise((resolve, reject) => {
+    try {
+      storageAPI.set(data, resolve);
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
 function updateBadge(enabled) {
-  chrome.action.setBadgeText({ text: enabled ? 'ON' : 'OFF' });
-  chrome.action.setBadgeBackgroundColor({ color: enabled ? '#22c55e' : '#6b7280' });
+  if (!actionAPI) {
+    return;
+  }
+
+  if (typeof actionAPI.setBadgeText === 'function') {
+    actionAPI.setBadgeText({ text: enabled ? 'ON' : 'OFF' });
+  }
+
+  if (typeof actionAPI.setBadgeBackgroundColor === 'function') {
+    actionAPI.setBadgeBackgroundColor({ color: enabled ? '#22c55e' : '#6b7280' });
+  }
 }
 
 function deriveLocalAnalysis(payload) {
@@ -118,51 +170,60 @@ async function analyzePageData(payload) {
 }
 
 async function persistAnalysis(result, url) {
-  await chrome.storage.local.set({
+  await setStoredData({
     lastAnalysis: result,
     lastAnalyzedUrl: url,
     analysisTimestamp: Date.now(),
   });
 }
 
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.get(['enabled', 'blockedWords'], (result) => {
-    const enabled = result.enabled !== false;
-    const blockedWords = Array.isArray(result.blockedWords) && result.blockedWords.length
-      ? result.blockedWords
-      : DEFAULT_WORDS;
+async function initializeSettings() {
+  const result = await getStoredData(['enabled', 'blockedWords']);
+  const enabled = result.enabled !== false;
+  const blockedWords = Array.isArray(result.blockedWords) && result.blockedWords.length
+    ? result.blockedWords
+    : DEFAULT_WORDS;
 
-    chrome.storage.local.set({ enabled, blockedWords });
-    updateBadge(enabled);
+  await setStoredData({ enabled, blockedWords });
+  updateBadge(enabled);
+}
+
+if (runtimeAPI && typeof runtimeAPI.onInstalled?.addListener === 'function') {
+  runtimeAPI.onInstalled.addListener(() => {
+    void initializeSettings();
   });
-});
+}
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type === 'updateStatus') {
-    updateBadge(Boolean(message.enabled));
-    sendResponse({ ok: true });
-    return true;
-  }
+if (runtimeAPI && typeof runtimeAPI.onMessage?.addListener === 'function') {
+  runtimeAPI.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type === 'updateStatus') {
+      updateBadge(Boolean(message.enabled));
+      sendResponse({ ok: true });
+      return true;
+    }
 
-  if (message?.type === 'getStatus') {
-    chrome.storage.local.get(['enabled'], (result) => {
-      sendResponse({ enabled: result.enabled !== false });
-    });
-    return true;
-  }
+    if (message?.type === 'getStatus') {
+      void getStoredData(['enabled']).then((result) => {
+        sendResponse({ enabled: result.enabled !== false });
+      }).catch(() => {
+        sendResponse({ enabled: true });
+      });
+      return true;
+    }
 
-  if (message?.type === 'REQUEST_ANALYSIS') {
-    analyzePageData(message.payload || {}).then(async (result) => {
-      await persistAnalysis(result, String(message.payload?.url || ''));
-      sendResponse(result);
-    }).catch((error) => {
-      console.error('Analysis failed', error);
-      const fallback = deriveLocalAnalysis(message.payload || {});
-      persistAnalysis(fallback, String(message.payload?.url || '')).finally(() => sendResponse(fallback));
-    });
-    return true;
-  }
+    if (message?.type === 'REQUEST_ANALYSIS') {
+      void analyzePageData(message.payload || {}).then(async (result) => {
+        await persistAnalysis(result, String(message.payload?.url || ''));
+        sendResponse(result);
+      }).catch((error) => {
+        console.error('Analysis failed', error);
+        const fallback = deriveLocalAnalysis(message.payload || {});
+        persistAnalysis(fallback, String(message.payload?.url || '')).finally(() => sendResponse(fallback));
+      });
+      return true;
+    }
 
-  sendResponse({ ok: false });
-  return false;
-});
+    sendResponse({ ok: false });
+    return false;
+  });
+}

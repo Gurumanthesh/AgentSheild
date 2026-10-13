@@ -1,10 +1,32 @@
+const extensionAPI = globalThis.browser || globalThis.chrome;
+const storageAPI = extensionAPI?.storage?.local || extensionAPI?.storage || null;
+
+async function getStoredData(keys) {
+  if (!storageAPI || typeof storageAPI.get !== 'function') {
+    return {};
+  }
+
+  const result = storageAPI.get(keys);
+  if (result && typeof result.then === 'function') {
+    return result;
+  }
+
+  return new Promise((resolve, reject) => {
+    try {
+      storageAPI.get(keys, resolve);
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
 function formatStatusLabel(value) {
   if (!value) return 'Not analyzed';
   return value.replace(/_/g, ' ');
 }
 
 async function renderAnalysis() {
-  const result = await chrome.storage.local.get(['lastAnalysis']);
+  const result = await getStoredData(['lastAnalysis']);
   const analysis = result.lastAnalysis || {
     status: 'not_analyzed',
     risk_score: 0,
