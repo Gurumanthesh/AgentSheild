@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import './styles.css';
 
-const API_URL = 'http://127.0.0.1:8000/api/analyze';
+const API_URL = 'https://agentsheild-br.onrender.com/api/analyze';
 
 function App() {
   const [text, setText] = useState('Your account will be suspended immediately. Verify now with your password and OTP.');

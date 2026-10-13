@@ -3,7 +3,11 @@ const storageAPI = extensionAPI?.storage?.local || extensionAPI?.storage || null
 const actionAPI = extensionAPI?.action || extensionAPI?.browserAction || null;
 const runtimeAPI = extensionAPI?.runtime || null;
 
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const API_BASE_URLS = [
+  'https://agentsheild-br.onrender.com',
+  'http://127.0.0.1:8000',
+];
+const API_TIMEOUT_MS = 8000;
 const DEFAULT_WORDS = ['password', 'secret', 'token', 'api_key'];
 
 async function getStoredData(keys) {
@@ -146,26 +150,48 @@ async function analyzePageData(payload) {
     })) : [],
   };
 
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/analyze`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(safePayload),
-      signal: AbortSignal.timeout(4000),
-    });
+  let lastError = null;
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
+  for (const baseUrl of API_BASE_URLS) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
-    const json = await response.json();
-    if (json && typeof json === 'object') {
-      return json;
+    try {
+      const response = await fetch(`${baseUrl}/api/analyze`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify(safePayload),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await response.text();
+        throw new Error(`Non-JSON response from ${baseUrl}: ${text.slice(0, 200)}`);
+      }
+
+      const json = await response.json();
+      if (json && typeof json === 'object') {
+        return json;
+      }
+
+      throw new Error(`Empty or invalid JSON payload from ${baseUrl}`);
+    } catch (error) {
+      lastError = error;
+      console.warn(`AgentShield backend request failed for ${baseUrl}. Trying next endpoint if available.`, error);
+    } finally {
+      clearTimeout(timeoutId);
     }
-  } catch (error) {
-    console.warn('AgentShield backend unavailable, using local fallback.', error);
   }
 
+  console.warn('AgentShield backend unavailable, using local fallback.', lastError);
   return deriveLocalAnalysis(safePayload);
 }
 
