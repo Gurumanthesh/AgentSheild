@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AgentShield</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <div class="brand-row">
+        <div class="brand-mark">🛡️</div>
+        <div>
+          <h1>AgentShield</h1>
+          <p class="tagline">Browse freely. Detect threats. Stay protected.</p>
+        </div>
+      </div>
+
+      <div class="meta-box">
+        <p class="meta-label">Current site</p>
+        <p id="page-host" class="meta-value">Not analyzed</p>
+        <p id="page-url" class="url">chrome://extensions</p>
+      </div>
+
+      <div id="status-box" class="status-box status-neutral">
+        <div class="status-topline">
+          <span class="status-icon">●</span>
+          <span id="state-label">Not analyzed</span>
+        </div>
+        <div id="risk-score" class="risk-score">0</div>
+        <p id="summary-text" class="summary-text">The page has not been checked yet.</p>
+      </div>
+
+      <div class="quick-stats">
+        <div>
+          <span class="stat-label">Alerts</span>
+          <strong id="alert-count">0</strong>
+        </div>
+        <div>
+          <span class="stat-label">Last check</span>
+          <strong id="last-check">—</strong>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="analyze-button" class="primary" type="button">Analyze this page</button>
+        <button id="details-button" class="secondary" type="button">Open details</button>
+      </div>
+
+      <div class="footer-row">
+        <button id="options-link" class="link-button" type="button">Settings</button>
+      </div>
+    </main>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

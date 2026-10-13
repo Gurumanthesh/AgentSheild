@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AgentShield Details</title>
+    <link rel="stylesheet" href="analysis.css" />
+  </head>
+  <body>
+    <main class="analysis-page">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">AgentShield</p>
+          <h1>Threat analysis</h1>
+        </div>
+      </header>
+
+      <section class="card summary-card">
+        <div class="summary-row">
+          <div>
+            <p class="label">Status</p>
+            <h2 id="status-text">Not analyzed</h2>
+          </div>
+          <div class="score-box">
+            <span class="label">Risk score</span>
+            <strong id="risk-score">0</strong>
+          </div>
+        </div>
+        <p id="summary-text" class="summary-text">No analysis available yet.</p>
+      </section>
+
+      <section class="card">
+        <h3>Indicators</h3>
+        <ul id="indicator-list" class="indicator-list"></ul>
+      </section>
+
+      <section class="card">
+        <h3>Recommendations</h3>
+        <ul id="recommendation-list" class="recommendation-list"></ul>
+      </section>
+    </main>
+
+    <script src="analysis.js"></script>
+  </body>
+</html>
