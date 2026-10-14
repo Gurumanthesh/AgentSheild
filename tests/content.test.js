@@ -7,6 +7,7 @@ const {
   buildWarningSignature,
   shouldRenderWarning,
   resolveAnalysisResult,
+  collectPageSnapshotFromRoot,
 } = require('../content.js');
 
 const suspiciousPayload = {
@@ -56,6 +57,30 @@ test('duplicate warnings are prevented', () => {
   const state = { lastWarningKey: buildWarningSignature(result) };
 
   assert.equal(shouldRenderWarning(result, state), false);
+});
+
+test('complete page snapshot collects multiple sections and relevant links', () => {
+  const root = {
+    querySelectorAll: (selector) => {
+      if (selector === 'main, article, section, p, li, h1, h2, h3, h4, h5, h6, div, span, label, button, a, td, th') {
+        return [
+          { textContent: 'Urgent account alert.', hidden: false, querySelectorAll: () => [{ href: 'https://example.com/verify', textContent: 'Verify account' }] },
+          { textContent: 'Security check required now to keep your account active.', hidden: false, querySelectorAll: () => [{ href: 'https://example.com/secure', textContent: 'Secure account' }] },
+        ];
+      }
+      if (selector === 'a[href]') {
+        return [
+          { href: 'https://example.com/verify', textContent: 'Verify account' },
+          { href: 'https://example.com/secure', textContent: 'Secure account' },
+        ];
+      }
+      return [];
+    },
+  };
+
+  const snapshot = collectPageSnapshotFromRoot(root, 'https://example.com');
+  assert.match(snapshot.text, /Urgent|account|Security|verify/i);
+  assert.equal(snapshot.links.length, 2);
 });
 
 test('backend failures fall back to the local analysis result', () => {

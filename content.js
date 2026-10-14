@@ -53,21 +53,79 @@
     };
   }
 
+  function collectPageSnapshotFromRoot(root, pageUrl = window.location.href) {
+    if (!root) {
+      return { url: sanitizeUrl(pageUrl), text: '', links: [] };
+    }
+
+    const selector = 'main, article, section, p, li, h1, h2, h3, h4, h5, h6, div, span, label, button, a, td, th';
+    const nodes = typeof root.querySelectorAll === 'function'
+      ? Array.from(root.querySelectorAll(selector))
+      : [];
+
+    const seenLinks = new Map();
+    const textParts = [];
+
+    nodes.forEach((node) => {
+      const style = typeof window !== 'undefined' && window.getComputedStyle ? window.getComputedStyle(node) : null;
+      const hidden = Boolean(node.hidden || (style && (style.display === 'none' || style.visibility === 'hidden')));
+
+      if (hidden) {
+        return;
+      }
+
+      const text = sanitizeText(node.textContent || '');
+      if (text) {
+        textParts.push(text);
+      }
+
+      if (typeof node.querySelectorAll === 'function') {
+        const linkNodes = Array.from(node.querySelectorAll('a[href]')).slice(0, MAX_LINKS);
+        linkNodes.forEach((linkNode) => {
+          const href = sanitizeUrl(linkNode.href || '');
+          if (!href || href === pageUrl || seenLinks.has(href)) {
+            return;
+          }
+          seenLinks.set(href, sanitizeText(linkNode.textContent || '').slice(0, 1200));
+        });
+      }
+    });
+
+    const rawLinks = Array.from(root.querySelectorAll ? root.querySelectorAll('a[href]') : []).slice(0, MAX_LINKS).map((link) => ({
+      text: sanitizeText(link.textContent || '').slice(0, 1200),
+      url: sanitizeUrl(link.href || ''),
+    })).filter((link) => link.url && !/^(javascript:|data:|mailto:|tel:)/i.test(link.url));
+
+    const dedupedLinks = [];
+    const seen = new Set();
+    rawLinks.forEach((link) => {
+      if (!seen.has(link.url)) {
+        seen.add(link.url);
+        dedupedLinks.push(link);
+      }
+    });
+
+    if (seenLinks.size) {
+      Array.from(seenLinks.entries()).forEach(([url, text]) => {
+        if (!seen.has(url)) {
+          dedupedLinks.push({ text, url });
+        }
+      });
+    }
+
+    return buildPageSnapshot({
+      url: sanitizeUrl(pageUrl),
+      text: textParts.join(' '),
+      links: dedupedLinks.slice(0, MAX_LINKS),
+    });
+  }
+
   function collectPageSnapshot() {
     if (typeof document === 'undefined' || !document.body) {
       return { url: '', text: '', links: [] };
     }
 
-    const rawLinks = Array.from(document.querySelectorAll('a[href]')).slice(0, MAX_LINKS).map((link) => ({
-      text: link.textContent || '',
-      url: link.href || '',
-    }));
-
-    return buildPageSnapshot({
-      url: window.location.href,
-      text: document.body.innerText || '',
-      links: rawLinks,
-    });
+    return collectPageSnapshotFromRoot(document.body, window.location.href);
   }
 
   function buildWarningSignature(result) {
@@ -280,6 +338,7 @@
     sanitizeUrl,
     buildPageSnapshot,
     collectPageSnapshot,
+    collectPageSnapshotFromRoot,
     buildWarningSignature,
     resolveAnalysisResult,
     shouldRenderWarning,
